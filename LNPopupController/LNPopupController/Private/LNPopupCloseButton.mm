@@ -14,6 +14,7 @@
 #import "LNPopupContentView+Private.h"
 #import "_LNPopupGlassUtils.h"
 #import "_LNPopupSwizzlingUtils.h"
+#import "_LNPopupCatalystHelper.h"
 
 BOOL _LNPopupCloseButtonStyleIsGlass(LNPopupCloseButtonStyle style)
 {
@@ -101,8 +102,6 @@ __attribute__((objc_direct_members))
 
 @synthesize style=__style;
 
-#ifndef LNPopupControllerEnforceStrictClean
-
 + (void)load
 {
 	@autoreleasepool
@@ -118,15 +117,16 @@ __attribute__((objc_direct_members))
 	return _popupContentView.currentPopupContentViewController.view;
 }
 
-#endif
-
 - (instancetype)initWithContainingContentView:(LNPopupContentView*)contentView
 {
 	self = [super init];
 	
 	if(self)
 	{
-		self.preferredBehavioralStyle = UIBehavioralStylePad;
+		if(@available(iOS 15.0, *))
+		{
+			self.preferredBehavioralStyle = UIBehavioralStylePad;
+		}
 		
 		_popupContentView = contentView;
 		
@@ -288,6 +288,7 @@ static CGFloat LNPopupCloseButtonGrabberHeight(void)
 
 - (void)_setupForCircularButton
 {
+#if !TARGET_OS_MACCATALYST
 	UIBlurEffectStyle blurStyle = UIBlurEffectStyleSystemChromeMaterial;
 	
 	_effectView = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:blurStyle]];
@@ -303,6 +304,14 @@ static CGFloat LNPopupCloseButtonGrabberHeight(void)
 	_highlightView.alpha = 0.0;
 	[highlightEffectView.contentView addSubview:_highlightView];
 	[_effectView.contentView addSubview:highlightEffectView];
+#else
+	if(@available(iOS 15.0, *))
+	{
+		UIButtonConfiguration* config = [UIButtonConfiguration grayButtonConfiguration];
+		config.image = [UIImage systemImageNamed:@"chevron.down"];
+		self.configuration = config;
+	}
+#endif
 	
 	[self addTarget:self action:@selector(_didTouchDown) forControlEvents:UIControlEventTouchDown];
 	[self addTarget:self action:@selector(_didTouchDragExit) forControlEvents:UIControlEventTouchDragExit];
@@ -310,19 +319,24 @@ static CGFloat LNPopupCloseButtonGrabberHeight(void)
 	[self addTarget:self action:@selector(_didTouchUp) forControlEvents:UIControlEventTouchUpInside];
 	[self addTarget:self action:@selector(_didTouchUp) forControlEvents:UIControlEventTouchUpOutside];
 	[self addTarget:self action:@selector(_didTouchCancel) forControlEvents:UIControlEventTouchCancel];
-	
+
+#if !TARGET_OS_MACCATALYST
 	self.layer.shadowColor = [UIColor blackColor].CGColor;
 	self.layer.shadowOpacity = 0.15;
 	self.layer.shadowRadius = 4.0;
 	self.layer.shadowOffset = CGSizeMake(0, 0);
 	self.layer.masksToBounds = NO;
+#endif
 	
 	self.tintColor = [UIColor labelColor];
 	[self setTitleColor:self.tintColor forState:UIControlStateNormal];
 	
-	UIImageSymbolConfiguration* config = [UIImageSymbolConfiguration configurationWithPointSize:15 weight:UIImageSymbolWeightHeavy scale:UIImageSymbolScaleSmall];
-	UIImage* image = [[UIImage systemImageNamed:@"chevron.down" withConfiguration:config] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
-	[self setImage:image forState:UIControlStateNormal];
+	if(ln_unavailable(iOS 15.0, *))
+	{
+		UIImageSymbolConfiguration* config = [UIImageSymbolConfiguration configurationWithPointSize:15 weight:UIImageSymbolWeightHeavy scale:UIImageSymbolScaleSmall];
+		UIImage* image = [[UIImage systemImageNamed:@"chevron.down" withConfiguration:config] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+		[self setImage:image forState:UIControlStateNormal];
+	}
 }
 
 - (void)_setupForGlassButton API_AVAILABLE(ios(26.0))
@@ -447,11 +461,19 @@ static CGFloat LNPopupCloseButtonGrabberHeight(void)
 	CGSize rv;
 	if(_LNPopupCloseButtonStyleIsGlass(self.effectiveStyle))
 	{
+#if TARGET_OS_MACCATALYST
+		rv = [_LNPopupCatalystHelper metricsForScene:self.window.windowScene].glassButtonSize;
+#else
 		rv = CGSizeMake(44, 44);
+#endif
 	}
 	else if(self.effectiveStyle == LNPopupCloseButtonStyleRound)
 	{
+#if TARGET_OS_MACCATALYST
+		rv = CGSizeMake(30, 30);
+#else
 		rv = CGSizeMake(24, 24);
+#endif
 	}
 	else if(self.effectiveStyle == LNPopupCloseButtonStyleChevron)
 	{
@@ -511,7 +533,7 @@ static CGFloat LNPopupCloseButtonGrabberHeight(void)
 	}
 }
 
-- (nullable UIPointerStyle *)pointerInteraction:(UIPointerInteraction *)interaction styleForRegion:(UIPointerRegion *)region
+- (nullable UIPointerStyle *)pointerInteraction:(UIPointerInteraction *)interaction styleForRegion:(UIPointerRegion *)region  API_AVAILABLE(ios(13.4))
 {
 	UIPointerLiftEffect* effect = [UIPointerLiftEffect effectWithPreview:[[UITargetedPreview alloc] initWithView:self]];
 	UIPointerShape* shape = nil;//[UIPointerShape shapeWithRoundedRect:interaction.view.frame];

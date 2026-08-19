@@ -78,6 +78,10 @@ class MusicTabBarController: UITabBarController {
 		super.viewDidLoad()
 		
 		tabs = convertedTabs
+		mode = .tabSidebar
+		if ProcessInfo.processInfo.isMacCatalystApp {
+			setTabBarHidden(true, animated: false)
+		}
 		
 #if LNPOPUP
 		let barStyle = LNPopupBar.Style(rawValue: UserDefaults.settings.object(forKey: PopupSetting.barStyle)  as? Int ?? 0)!
@@ -94,7 +98,15 @@ class MusicTabBarController: UITabBarController {
 		popupBar.supportsMinimization = UserDefaults.settings.bool(forKey: PopupSetting.minimizationEnabled)
 		popupBar.tintColor = .label
 		
-		let popupContentController = DemoMusicPlayerController()
+		popupInteractionStyle = .automatic
+		
+		let popupContentController: UIViewController
+		if #available(iOS 26.0, *), ProcessInfo.processInfo.isMacCatalystApp {
+			popupContentController = DemoMusicPlayerController<PlayerViewMac>()
+		} else {
+			popupContentController = DemoMusicPlayerController<PlayerView>()
+		}
+		
 		presentPopupBar(with: popupContentController)
 #else
 		if #available(iOS 26.0, *) {

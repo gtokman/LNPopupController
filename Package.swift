@@ -1,5 +1,5 @@
 // swift-tools-version:6.2
-// LNPopupController:4.5.5
+// LNPopupController:4.5.6
 
 import PackageDescription
 import Foundation.NSFileManager
@@ -50,7 +50,8 @@ let package = Package(
 			targets: ["LNPopupController", "LNPopupController-ObjC", "LNPopupController-SwiftPrivate"]),
 	],
 	dependencies: [
-		.package(url: "https://github.com/LeoNatan/LNSystemMarqueeLabel", revision: "916ef69a71db627498d007896a0508901d9f9fa3")
+//		.package(path: "../LNSystemMarqueeLabel"),
+		.package(url: "https://github.com/LeoNatan/LNSystemMarqueeLabel", from: Version(stringLiteral: "0.1.2"))
 	],
 	targets: [
 		.target(

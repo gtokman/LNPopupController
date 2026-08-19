@@ -13,14 +13,9 @@
 #import "_LNPopupBase64Utils.hh"
 #import "_LNWeakRef.h"
 #import <objc/runtime.h>
+#import "_LNPopupAddressInfo.h"
 
-/*
- @property (nonatomic, getter=_isMinimized, setter=_setMinimized:) BOOL _minimized;
- @property (copy, nonatomic, setter=_setMinimizedStateDidChangeHandler:) void(^_minimizedStateDidChangeHandler)(BOOL);
- @property (readonly, nonatomic) struct CGRect _frameForHostedAccessoryView;
- */
-
-static BOOL __LNPopupTabBarSupportsMinimizationAPI = YES;
+static BOOL __LNPopupTabBarSupportsMinimizationAPI = NO;
 static NSString* __LNFrameForHostedAccessoryViewKey;
 static NSString* __LNMinimizedStateDidChangeHandlerKey;
 static NSString* __LNIsMinimizedKey;
@@ -31,6 +26,8 @@ BOOL LNPopupEnvironmentTabBarSupportsMinimizationAPI(void)
 }
 
 @implementation UITabBar (LNPopupInheritedBarMetricsSupport)
+
+static BOOL __ln_hackApplied = NO;
 
 + (void)load
 {
@@ -46,6 +43,28 @@ BOOL LNPopupEnvironmentTabBarSupportsMinimizationAPI(void)
 		BOOL m3 = [self instancesRespondToSelector:NSSelectorFromString(__LNIsMinimizedKey)];
 		
 		__LNPopupTabBarSupportsMinimizationAPI = glass && m1 && m2 && m3;
+		
+		if(glass)
+		{
+			if(@available(iOS 27, *))
+			{
+				Class cls = UITabBar.class;
+				SEL sel = NSSelectorFromString(__LNIsMinimizedKey);
+				Method m = LNSwizzleClassGetInstanceMethod(cls, sel);
+				method_setImplementation(m, imp_implementationWithBlock(^BOOL(NSObject* self) {
+					static NSString* key = LNPopupHiddenString("visualProvider.currentMorphTarget");
+					NSInteger currentMorphTarget = [[self valueForKeyPath:key] integerValue];
+					return currentMorphTarget == 2;
+				}));
+			}
+			else
+			{
+				Method m = LNSwizzleClassGetInstanceMethod(UITabBar.class, NSSelectorFromString(LNPopupHiddenString("_isPhotosApp")));
+				method_setImplementation(m, imp_implementationWithBlock(^ BOOL (id _self) {
+					return YES;
+				}));
+			}
+		}
 	}
 }
 
@@ -61,6 +80,12 @@ BOOL LNPopupEnvironmentTabBarSupportsMinimizationAPI(void)
 
 - (CGRect)_ln_proposedFrameForPopupBar
 {
+	if(@available(iOS 27, *))
+	{
+		CGRect (^hostedElementLayoutResolver)(NSInteger element) = [self valueForKey:LNPopupHiddenString("_hostedElementLayoutResolver")];
+		return hostedElementLayoutResolver(2);
+	}
+	
 	return [[self valueForKey:__LNFrameForHostedAccessoryViewKey] CGRectValue];
 }
 
@@ -81,12 +106,16 @@ static const void* __LNPopupTabBarMinimizationDelegateKey = &__LNPopupTabBarMini
 	_LNWeakRef* ref = [_LNWeakRef refWithObject:minimizationDelegate];
 	objc_setAssociatedObject(self, __LNPopupTabBarMinimizationDelegateKey, ref, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 	
-	__weak __typeof(self) weakTabBar = self;
+	__weak auto weakTabBar = self;
 	void (^handler)(BOOL) = minimizationDelegate == nil ? (id)nil : (id)^(BOOL wasMinimized) {
-		[weakTabBar._ln_minimizationDelegate tabBar:weakTabBar didMinimize:wasMinimized];
+		__strong auto tabBar = weakTabBar;
+		[tabBar._ln_minimizationDelegate tabBar:tabBar didMinimize:wasMinimized];
 	};
 	
-	[self setValue:handler forKey:__LNMinimizedStateDidChangeHandlerKey];
+	if(__LNPopupTabBarSupportsMinimizationAPI)
+	{
+		[self setValue:handler forKey:__LNMinimizedStateDidChangeHandlerKey];
+	}
 }
 
 @end

@@ -16,6 +16,7 @@
 #import "UISplitView+LNPopupInheritedBarMetricsSupport.h"
 #import "_LNPopupTitlesPagingController.h"
 #import "LNForwardingDelegate.h"
+#import "LNPopupContentView+Private.h"
 
 #import <objc/runtime.h>
 #import <os/log.h>
@@ -555,6 +556,13 @@ UIEdgeInsets _LNPopupChildAdditiveSafeAreas(__kindof UIViewController* self)
 //_updateContentOverlayInsetsFromParentIfNecessary (iOS 15 and above)
 - (void)_uCOIFPIN
 {
+#if !TARGET_OS_MACCATALYST
+	if([self isKindOfClass:_LNPopupContentViewLayoutController.class])
+	{
+		return;
+	}
+#endif
+	
 	static SEL contentMarginSEL = NSSelectorFromString(LNPopupHiddenString("_contentMargin"));
 	static SEL setContentMarginSEL = NSSelectorFromString(LNPopupHiddenString("_setContentMargin:"));
 	static SEL _setContentOverlayInsets_andLeftMargin_rightMarginSEL = NSSelectorFromString(LNPopupHiddenString("_setContentOverlayInsets:andLeftMargin:rightMargin:"));
@@ -584,6 +592,18 @@ UIEdgeInsets _LNPopupChildAdditiveSafeAreas(__kindof UIViewController* self)
 		self.view.insetsLayoutMarginsFromSafeArea = YES;
 		self.viewRespectsSystemMinimumLayoutMargins = NO;
 		self.view.layoutMargins = UIEdgeInsetsMake(0, contentMargin, 0, contentMargin);
+		
+		LNPopupContentView* containingContentView = self.popupPresentationContainerViewController.popupContentView;
+#if !TARGET_OS_MACCATALYST
+		_setContentOverlayInsets_andLeftMargin_rightMarginFunc(containingContentView.layoutController, _setContentOverlayInsets_andLeftMargin_rightMarginSEL, insets, contentMargin, contentMargin);
+		setContentMarginFunc(containingContentView.layoutController, setContentMarginSEL, contentMargin);
+		
+		containingContentView.layoutController.view.insetsLayoutMarginsFromSafeArea = YES;
+		containingContentView.layoutController.viewRespectsSystemMinimumLayoutMargins = NO;
+		containingContentView.layoutController.view.layoutMargins = UIEdgeInsetsMake(0, contentMargin, 0, contentMargin);
+#endif
+		
+		[containingContentView _ln_updateSafeAreaInsets:insets];
 		
 		return;
 	}
@@ -828,7 +848,7 @@ UIEdgeInsets _LNPopupChildAdditiveSafeAreas(__kindof UIViewController* self)
 	
 	if(neededInsets.bottom != MAX(safe.bottom, childAdditive.bottom))
 	{
-		_LNPopupSupportSetPopupInsetsForViewController(self, self.popupBar, YES, neededInsets);
+		_LNPopupSupportSetPopupInsetsForViewController(self, self.popupBar, NO, neededInsets);
 	}
 }
 
@@ -2101,18 +2121,18 @@ static void* LNSplitViewControllerAdjustsLayout = &LNSplitViewControllerAdjustsL
 	[self _ln_promoteToSplitViewOrElse:^{
 		if(LNPopupEnvironmentHasGlass() && self.view.superview != nil)
 		{
-			UIView* target = self.view.superview;
+			UIView* target = self.view;
 			if(@available(iOS 27.0, *))
-				if(self.splitViewController != nil)
-				{
-					NSUInteger idx = [self.splitViewController.viewControllers indexOfObjectPassingTest:^BOOL(__kindof UIViewController * _Nonnull obj, NSUInteger idx, BOOL * _Nonnull stop) {
-						return [self.view isDescendantOfView:obj.view];
-					}];
-					if(idx != NSNotFound && [self.splitViewController viewControllerForColumn:UISplitViewControllerColumnPrimary] == self.splitViewController.viewControllers[idx])
-					{
-						target = target.superview;
-					}
-				}
+			if(self.splitViewController != nil && self._ln_isPartOfPrimarySplit)
+			{
+				static NSString* const columnContainerView = LNPopupHiddenString("ColumnContainerView");
+				
+				//iOS 27 places the "toolbar" as a subview of the split view controller's internal hierarchy instead of the navigation controller's.
+				UIView* newTarget = [target _ln_firstDescendantPassingTest:^BOOL(UIView * _Nonnull viewToTest) {
+					return [NSStringFromClass(viewToTest.class) hasSuffix:columnContainerView];
+				} includingSelf:YES];
+				target = newTarget;
+			}
 			
 			[target addSubview:self._ln_popupController_nocreate.popupContentView];
 		}
@@ -2218,6 +2238,13 @@ static void* LNSplitViewControllerAdjustsLayout = &LNSplitViewControllerAdjustsL
 	
 	if(@available(iOS 27.0, *))
 	{
+		if(self.splitViewController != nil && self._ln_isPartOfPrimarySplit)
+		{
+			//For whatever reason, Apple places the "toolbar" somewhere in the split view controller's view hierarchy, rather than the navigation controller's. So we do best effort here, by using the system's safe area.
+			auto safeArea = self.topViewController.view.safeAreaInsets.bottom - _LNPopupSafeAreaInsets(self.topViewController).bottom;
+			return safeArea;
+		}
+		
 		UIView* glassView;
 		if(LNPopupBar.isCatalystApp)
 		{
@@ -2794,7 +2821,7 @@ static void* wrapperDelegateKey = &wrapperDelegateKey;
 						@selector(_ln_popup_viewDidLayoutSubviews_svc));
 		
 		{
-			Method delegateGetter = class_getInstanceMethod(UISplitViewController.class, @selector(delegate));
+			Method delegateGetter = LNSwizzleClassGetInstanceMethod(UISplitViewController.class, @selector(delegate));
 			orig_delegateGetter = reinterpret_cast<decltype(orig_delegateGetter)>(method_getImplementation(delegateGetter));
 			
 			LNSwizzleMethod(self,
@@ -2810,20 +2837,10 @@ static void* wrapperDelegateKey = &wrapperDelegateKey;
 
 - (BOOL)popupBarAvoidsPrimaryColumn
 {
-	if(ln_unavailable(iOS 26.0, *))
-	{
-		return NO;
-	}
-	
-	if(LNPopupEnvironmentHasGlass() == NO)
-	{
-		return NO;
-	}
-	
 	NSNumber* value = objc_getAssociatedObject(self, LNSplitViewControllerAdjustsLayout);
 	if(value == nil)
 	{
-		return LNPopupBar.isCatalystApp;
+		return YES;
 	}
 	else
 	{
@@ -2836,13 +2853,8 @@ static void* wrapperDelegateKey = &wrapperDelegateKey;
 	objc_setAssociatedObject(self, LNSplitViewControllerAdjustsLayout, @(popupBarAvoidsPrimaryColumn), OBJC_ASSOCIATION_RETAIN);
 }
 
-- (void)_ln_layoutModernSplitViewControllerFloatingPopup
+- (void)_ln_layoutModernSplitViewControllerFloatingPopup API_AVAILABLE(ios(14.0))
 {
-	if(LNPopupEnvironmentHasGlass() == NO)
-	{
-		return;
-	}
-	
 	if(self.style == UISplitViewControllerStyleUnspecified)
 	{
 		//Only modern split views are supported.
@@ -2856,14 +2868,20 @@ static void* wrapperDelegateKey = &wrapperDelegateKey;
 {
 	[super _layoutPopupBarOrderForUse];
 	
-	[self _ln_layoutModernSplitViewControllerFloatingPopup];
+	if(@available(iOS 14.0, *))
+	{
+		[self _ln_layoutModernSplitViewControllerFloatingPopup];
+	}
 }
 
 - (void)_layoutPopupBarOrderForTransition
 {
 	[super _layoutPopupBarOrderForTransition];
 	
-	[self _ln_layoutModernSplitViewControllerFloatingPopup];
+	if(@available(iOS 14.0, *))
+	{
+		[self _ln_layoutModernSplitViewControllerFloatingPopup];
+	}
 }
 
 - (void)_ln_popup_viewDidLayoutSubviews_svc

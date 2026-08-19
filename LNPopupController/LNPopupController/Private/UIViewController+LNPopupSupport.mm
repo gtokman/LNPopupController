@@ -29,10 +29,6 @@ static const void* _LNPopupShouldExtendUnderSafeAreaKey = &_LNPopupShouldExtendU
 
 const double LNSnapPercentDefault = 0.32;
 
-extern "C" {
-extern LNPopupInteractionStyle _LNPopupResolveInteractionStyleFromInteractionStyle(LNPopupInteractionStyle style);
-}
-
 @implementation UIViewController (LNPopupSupportPrivate)
 
 @end
@@ -41,19 +37,10 @@ extern LNPopupInteractionStyle _LNPopupResolveInteractionStyleFromInteractionSty
 
 - (UIPresentationController*)nonMemoryLeakingPresentationController
 {
-#if ! LNPopupControllerEnforceStrictClean
 	static NSString* sel = LNPopupHiddenString("_existingPresentationControllerImmediate:effective:");;
 	static id (*nonLeakingPresentationController)(id, SEL, BOOL, BOOL) = reinterpret_cast<decltype(nonLeakingPresentationController)>(objc_msgSend);
 
 	return nonLeakingPresentationController(self, NSSelectorFromString(sel), NO, NO);
-#else
-	NSString* selector = [NSString stringWithFormat:@"_%@", NSStringFromSelector(@selector(presentationController))];
-	
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-	return [self performSelector:NSSelectorFromString(selector)];
-#pragma clang diagnostic pop
-#endif
 }
 
 - (void)presentPopupBarWithContentViewController:(UIViewController*)controller openPopup:(BOOL)openPopup animated:(BOOL)animated completion:(nullable void(^)(void))completionBlock;
@@ -325,7 +312,15 @@ extern LNPopupInteractionStyle _LNPopupResolveInteractionStyleFromInteractionSty
 
 - (LNPopupInteractionStyle)effectivePopupInteractionStyle
 {
-	return _LNPopupResolveInteractionStyleFromInteractionStyle((LNPopupInteractionStyle)[objc_getAssociatedObject(self, _LNPopupInteractionStyleKey) unsignedIntegerValue]);
+	BOOL isAutomatic = NO;
+	LNPopupInteractionStyle resolved = _LNPopupResolveInteractionStyleFromInteractionStyle((LNPopupInteractionStyle)[objc_getAssociatedObject(self, _LNPopupInteractionStyleKey) unsignedIntegerValue], self.popupPresentationState, &isAutomatic);
+	
+	if(isAutomatic)
+	{
+		return LNPopupInteractionStyleAutomatic;
+	}
+	
+	return resolved;
 }
 
 - (void)setPopupInteractionStyle:(LNPopupInteractionStyle)popupInteractionStyle
@@ -369,20 +364,10 @@ static void* LNViewControllerPromotesOverSplitView = &LNViewControllerPromotesOv
 
 - (BOOL)popupOpensOverSplitViewController
 {
-	if(ln_unavailable(iOS 26.0, *))
-	{
-		return NO;
-	}
-	
-	if(LNPopupEnvironmentHasGlass() == NO)
-	{
-		return NO;
-	}
-	
 	NSNumber* value = objc_getAssociatedObject(self, LNViewControllerPromotesOverSplitView);
 	if(value == nil)
 	{
-		return LNPopupBar.isCatalystApp;
+		return YES;
 	}
 	else
 	{
@@ -414,6 +399,19 @@ static const void* _LNPopupContentControllerDiscoveredTransitionView = &_LNPopup
 	{
 		[self _ln_setDiscoveredTransitionView:nil];
 	}
+	
+	if(rv.object == nil)
+	{
+		for(UIViewController* child in self.childViewControllers)
+		{
+			LNPopupImageView* childTransitionView = child._ln_discoveredTransitionView;
+			if(childTransitionView != nil)
+			{
+				return childTransitionView;
+			}
+		}
+	}
+	
 	return rv.object;
 }
 
@@ -631,16 +629,23 @@ static const void* _LNPopupContentControllerDiscoveredTransitionView = &_LNPopup
 		window.userInteractionEnabled = NO;
 	}
 	
-#if ! LNPopupControllerEnforceStrictClean
-	static SEL sel = NSSelectorFromString(LNPopupHiddenString("beginDisablingInterfaceAutorotation"));
-	if(lockRotation && [window respondsToSelector:sel])
+	static void(^beginDisablingInterfaceAutorotation)(UIWindow*) = nil;
+	static dispatch_once_t onceToken;
+	dispatch_once(&onceToken, ^{
+		SEL sel = NSSelectorFromString(LNPopupHiddenString("beginDisablingInterfaceAutorotation"));
+		Method m = LNSwizzleClassGetInstanceMethod(UIWindow.class, sel);
+		void(*orig)(id, SEL) = reinterpret_cast<decltype(orig)>(method_getImplementation(m));
+		beginDisablingInterfaceAutorotation = ^(UIWindow* window)
+		{
+			orig(window, sel);
+		};
+	});
+	
+	
+	if(lockRotation)
 	{
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-		[window performSelector:sel];
-#pragma clang diagnostic pop
+		beginDisablingInterfaceAutorotation(window);
 	}
-#endif
 }
 
 + (void)_ln_endTransitioningLockWithWindow:(UIWindow*)window unlockingRotation:(BOOL)unlockRotation
@@ -650,38 +655,46 @@ static const void* _LNPopupContentControllerDiscoveredTransitionView = &_LNPopup
 	[window _ln_setPopupInteractionOnly:nil];
 	window.userInteractionEnabled = YES;
 	
-#if ! LNPopupControllerEnforceStrictClean
-	static SEL sel = NSSelectorFromString(LNPopupHiddenString("endDisablingInterfaceAutorotationAnimated:"));
+	static void(^endDisablingInterfaceAutorotationAnimated)(UIWindow*, BOOL) = nil;
+	static dispatch_once_t onceToken;
+	dispatch_once(&onceToken, ^{
+		SEL sel = NSSelectorFromString(LNPopupHiddenString("endDisablingInterfaceAutorotationAnimated:"));
+		Method m = LNSwizzleClassGetInstanceMethod(UIWindow.class, sel);
+		void(*orig)(id, SEL, BOOL) = reinterpret_cast<decltype(orig)>(method_getImplementation(m));
+		endDisablingInterfaceAutorotationAnimated = ^(UIWindow* window, BOOL animated)
+		{
+			orig(window, sel, animated);
+		};
+	});
 	
-	if(unlockRotation && [window respondsToSelector:sel])
+	if(unlockRotation)
 	{
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-		[window performSelector:sel];
-#pragma clang diagnostic pop
+		endDisablingInterfaceAutorotationAnimated(window, YES);
 	}
-#endif
 	
 	[window _ln_setLockedForPopupTransition:NO];
 }
 
 - (BOOL)_ln_isPartOfPrimarySplit
 {
-	UISplitViewController* split = self.splitViewController;
-	if(split == nil || split.style == UISplitViewControllerStyleUnspecified)
+	if(@available(iOS 14.0, *))
 	{
-		return NO;
-	}
-	
-	UIViewController* primary = [split viewControllerForColumn:UISplitViewControllerColumnPrimary];
-	UIViewController* tested = self;
-	while(tested != nil)
-	{
-		if(primary == tested)
+		UISplitViewController* split = self.splitViewController;
+		if(split == nil || split.style == UISplitViewControllerStyleUnspecified)
 		{
-			return YES;
+			return NO;
 		}
-		tested = tested.parentViewController;
+		
+		UIViewController* primary = [split viewControllerForColumn:UISplitViewControllerColumnPrimary];
+		UIViewController* tested = self;
+		while(tested != nil)
+		{
+			if(primary == tested)
+			{
+				return YES;
+			}
+			tested = tested.parentViewController;
+		}
 	}
 	
 	return NO;
@@ -730,7 +743,7 @@ static const void* _LNPopupContentControllerDiscoveredTransitionView = &_LNPopup
 @implementation UIViewController (LNPopupKeyPressHandling)
 
 static
-BOOL _LNPopupPressesContainEscape(NSSet<UIPress*>* presses)
+BOOL _LNPopupPressesContainEscape(NSSet<UIPress*>* presses) API_AVAILABLE(ios(13.4))
 {
 	NSSet<UIKey*>* keys = [presses valueForKey:@"key"];
 	return [keys objectsPassingTest:^BOOL(UIKey * _Nonnull obj, BOOL * _Nonnull stop) {
@@ -740,6 +753,7 @@ BOOL _LNPopupPressesContainEscape(NSSet<UIPress*>* presses)
 
 - (void)pressesBegan:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event
 {
+	if(@available(iOS 13.4, *))
 	if(self.popupPresentationState == LNPopupPresentationStateOpen && _LNPopupPressesContainEscape(presses))
 	{
 		//Wait for pressesEnded:
@@ -751,6 +765,7 @@ BOOL _LNPopupPressesContainEscape(NSSet<UIPress*>* presses)
 
 - (void)pressesEnded:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event
 {
+	if(@available(iOS 13.4, *))
 	if(self.popupPresentationState == LNPopupPresentationStateOpen && _LNPopupPressesContainEscape(presses))
 	{
 		[self closePopupAnimated:YES completion:nil];

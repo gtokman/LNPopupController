@@ -31,7 +31,7 @@ static const void* frozenAvoidPrimaryColumnValueKey = &frozenAvoidPrimaryColumnV
 	return svc.displayMode;
 }
 
-- (void)splitViewController:(UISplitViewController *)svc willShowColumn:(UISplitViewControllerColumn)column
+- (void)splitViewController:(UISplitViewController *)svc willShowColumn:(UISplitViewControllerColumn)column API_AVAILABLE(ios(14.0))
 {
 	if(column != UISplitViewControllerColumnPrimary)
 	{
@@ -73,7 +73,7 @@ static const void* frozenAvoidPrimaryColumnValueKey = &frozenAvoidPrimaryColumnV
 	}
 }
 
-- (void)splitViewController:(UISplitViewController *)svc willHideColumn:(UISplitViewControllerColumn)column
+- (void)splitViewController:(UISplitViewController *)svc willHideColumn:(UISplitViewControllerColumn)column API_AVAILABLE(ios(14.0))
 {
 	if(column != UISplitViewControllerColumnPrimary)
 	{
@@ -123,16 +123,10 @@ static const void* frozenAvoidPrimaryColumnValueKey = &frozenAvoidPrimaryColumnV
 
 - (void)splitViewController:(UISplitViewController *)svc willChangeToDisplayMode:(UISplitViewControllerDisplayMode)displayMode
 {
-//	BOOL avoidedBefore = [svc _ln_shouldAvoidPrimaryColumnWithVisible:svc._ln_isPrimaryShown forDisplayMode:svc.displayMode];
-//	BOOL avoidedAfter = [svc _ln_shouldAvoidPrimaryColumnWithVisible:svc._ln_isPrimaryShown forDisplayMode:displayMode];
-//	
-//	if(avoidedBefore == YES && avoidedAfter != avoidedBefore)
-//	{
-//		[svc _ln_setFrozenAvoidPrimaryColumnValue:@(avoidedBefore)];
-//	}
-//	
-//	[svc _ln_setFrozenAvoidPrimaryColumnValue:nil];
-//	__LNPopupUpdateChildInsets(svc);
+	if(ln_unavailable(iOS 14.0, *))
+	{
+		return;;
+	}
 	
 	_targetDisplayMode = @(displayMode);
 	
@@ -197,7 +191,7 @@ static const void* frozenAvoidPrimaryColumnValueKey = &frozenAvoidPrimaryColumnV
 	return [self _ln_shouldAvoidPrimaryColumnWithVisible:self._ln_isPrimaryShown forDisplayMode:self.displayMode];
 }
 
-- (BOOL)_ln_shouldAvoidPrimaryColumnWithVisible:(BOOL)visible forDisplayMode:(UISplitViewControllerDisplayMode)displayMode
+- (BOOL)_ln_shouldAvoidPrimaryColumnWithVisible:(BOOL)visible forDisplayMode:(UISplitViewControllerDisplayMode)displayMode API_AVAILABLE(ios(14.0))
 {
 	if(self.popupBarAvoidsPrimaryColumn == NO || self._ln_popupController_nocreate.popupControllerTargetState == LNPopupPresentationStateBarHidden)
 	{
@@ -211,23 +205,26 @@ static const void* frozenAvoidPrimaryColumnValueKey = &frozenAvoidPrimaryColumnV
 
 - (NSDirectionalEdgeInsets)_ln_popupBarMarginsForPopupBar:(LNPopupBar*)popupBar
 {
-	NSDirectionalEdgeInsets barInsets = NSDirectionalEdgeInsetsZero;
-	
-	barInsets = [UINavigationController _ln_popupBarMarginsForPopupBar:popupBar inController:self];
+	NSDirectionalEdgeInsets margins = popupBar.floatingLayoutMargins;
+	NSDirectionalEdgeInsets barInsets = [UINavigationController _ln_popupBarMarginsForPopupBar:popupBar inController:self];
 	
 	CGFloat width = 0.0;
 	if(self._ln_shouldAvoidPrimaryColumn)
 	{
 		width = self.primaryColumnWidth;
+		if(NSProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 && popupBar.traitCollection.userInterfaceIdiom == UIUserInterfaceIdiomPhone && UIDeviceOrientationIsLandscape(UIDevice.currentDevice.orientation))
+		{
+			width -= 22;
+		}
 	}
 	
 	if(self.primaryEdge == UISplitViewControllerPrimaryEdgeLeading)
 	{
-		barInsets.leading += (width - (barInsets.leading != 0 ? 10 : 0));
+		barInsets.leading += width;
 	}
 	else
 	{
-		barInsets.trailing += (width - (barInsets.trailing != 0 ? 10 : 0));
+		barInsets.trailing += width;
 	}
 	
 	return barInsets;

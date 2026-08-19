@@ -12,8 +12,6 @@
 #import "LNPopupControllerImpl.h"
 #import "UIView+LNPopupSupportPrivate.h"
 
-extern LNPopupInteractionStyle _LNPopupResolveInteractionStyleFromInteractionStyle(LNPopupInteractionStyle style);
-
 @interface UIViewController ()
 
 - (CGRect)_ln_interactionLimitRect;
@@ -40,7 +38,7 @@ extern LNPopupInteractionStyle _LNPopupResolveInteractionStyleFromInteractionSty
 	return self;
 }
 
-- (BOOL)gestureRecognizer:(LNPopupInteractionPanGestureRecognizer *)gestureRecognizer shouldReceiveEvent:(UIEvent *)event
+- (BOOL)gestureRecognizer:(LNPopupInteractionPanGestureRecognizer *)gestureRecognizer shouldReceiveEvent:(UIEvent *)event API_AVAILABLE(ios(13.4))
 {
 	if([self.forwardedDelegate respondsToSelector:_cmd])
 	{
@@ -52,7 +50,11 @@ extern LNPopupInteractionStyle _LNPopupResolveInteractionStyleFromInteractionSty
 	if(event.type == UIEventTypeTouches)
 	{
 		UITouch* touch = event.allTouches.anyObject;
-		if(touch.type == UITouchTypeIndirectPointer && gestureRecognizer.allowsIndirectPointerInteraction == NO && [touch.view isDescendantOfView:_popupController.popupBar] == NO)
+		if(touch.type == UITouchTypeIndirectPointer && gestureRecognizer.allowsIndirectPointerInteraction == NO
+#if !TARGET_OS_MACCATALYST
+		   && [touch.view isDescendantOfView:_popupController.popupBar] == NO
+#endif
+		   )
 		{
 			return NO;
 		}
@@ -63,7 +65,7 @@ extern LNPopupInteractionStyle _LNPopupResolveInteractionStyleFromInteractionSty
 
 - (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)gestureRecognizer
 {
-	LNPopupInteractionStyle resolvedStyle = _LNPopupResolveInteractionStyleFromInteractionStyle(_popupController.containerController.popupInteractionStyle);
+	LNPopupInteractionStyle resolvedStyle = _LNPopupResolveInteractionStyleFromInteractionStyle(_popupController.containerController.popupInteractionStyle, _popupController.popupControllerPublicState, NULL);
 	
 	BOOL rv = resolvedStyle != LNPopupInteractionStyleNone;
 	

@@ -12,7 +12,6 @@
 #import "_LNPopupGlassUtils.h"
 #import "UIView+LNPopupSupportPrivate.h"
 
-#ifndef LNPopupControllerEnforceStrictClean
 static SEL _effectWithStyle_tintColor_invertAutomaticStyle_SEL;
 static id(*_effectWithStyle_tintColor_invertAutomaticStyle)(id, SEL, NSUInteger, UIColor*, BOOL);
 
@@ -26,7 +25,6 @@ static void __setupFunction(void)
 	Method m = LNSwizzleClassGetClassMethod(UIBlurEffect.class, _effectWithStyle_tintColor_invertAutomaticStyle_SEL);
 	_effectWithStyle_tintColor_invertAutomaticStyle = reinterpret_cast<decltype(_effectWithStyle_tintColor_invertAutomaticStyle)>(method_getImplementation(m));
 }
-#endif
 
 @implementation _LNTransitionPopupBar
 
@@ -378,19 +376,19 @@ static void __setupFunction(void)
 
 @implementation _LNPopupBarProgressView
 
+#if TARGET_OS_MACCATALYST
 - (UITraitCollection *)traitCollection
 {
 	UITraitCollection* rv = [super traitCollection];
 	
-#if TARGET_OS_MACCATALYST
 	//Force the use of the Pad visual provider for the progress view.
 	rv = [rv traitCollectionByModifyingTraits:^(id<UIMutableTraits>  _Nonnull mutableTraits) {
 		mutableTraits.userInterfaceIdiom = UIUserInterfaceIdiomPad;
 	}];
-#endif
 	
 	return rv;
 }
+#endif
 
 @end
 
