@@ -888,7 +888,13 @@ LNPopupBarProgressViewStyle _LNPopupResolveProgressViewStyleFromProgressViewStyl
 	
 	if(_resolvedIsCustom == NO || self.customBarWantsFullBarWidth == NO)
 	{
-		frame = UIEdgeInsetsInsetRect(frame, _LNEdgeInsetsFromDirectionalEdgeInsets(self.superview, __hackyMarginsInSuperviewSemanticContext));
+		NSDirectionalEdgeInsets margins = __hackyMarginsInSuperviewSemanticContext;
+		if(_resolvedIsFloating)
+		{
+			margins.leading += _additionalFloatingLayoutMargins.leading;
+			margins.trailing += _additionalFloatingLayoutMargins.trailing;
+		}
+		frame = UIEdgeInsetsInsetRect(frame, _LNEdgeInsetsFromDirectionalEdgeInsets(self.superview, margins));
 	}
 	
 	if(CGRectEqualToRect(_backgroundViewFrameDuringAnimation, CGRectZero))
@@ -2569,6 +2575,22 @@ static CGSize LNMakeSizeWithAspectRatioInsideSize(CGSize aspectRatio, CGSize siz
 {
 	_limitFloatingContentWidth = limitFloatingContentWidth;
 	
+	[self setNeedsLayout];
+}
+
+- (void)setAdditionalFloatingLayoutMargins:(NSDirectionalEdgeInsets)additionalFloatingLayoutMargins
+{
+	additionalFloatingLayoutMargins.top = 0;
+	additionalFloatingLayoutMargins.bottom = 0;
+	
+	if(NSDirectionalEdgeInsetsEqualToDirectionalEdgeInsets(_additionalFloatingLayoutMargins, additionalFloatingLayoutMargins))
+	{
+		return;
+	}
+	
+	_additionalFloatingLayoutMargins = additionalFloatingLayoutMargins;
+	
+	[self _setNeedsTitleLayoutByRemovingLabels:NO];
 	[self setNeedsLayout];
 }
 
