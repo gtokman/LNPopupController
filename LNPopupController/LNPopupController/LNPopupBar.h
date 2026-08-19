@@ -158,6 +158,15 @@ NS_SWIFT_UI_ACTOR
 /// Defaults to `true`.
 @property (nonatomic, assign) BOOL limitFloatingContentWidth;
 
+/// Additional margins to apply to a floating popup bar, on top of the system-computed floating layout margins.
+///
+/// Use this property to line a floating popup bar up with content that does not span the entire width of the container controller's view, such as a composer that is inset by a sidebar overlaying the content. Applying a transform to the popup bar for the same purpose is not supported: the system reads and writes the popup bar's frame during layout, presentation and interactive transitions.
+///
+/// Only the `leading` and `trailing` insets are used; `top` and `bottom` are ignored. Ignored for non-floating bar styles.
+///
+/// Defaults to `NSDirectionalEdgeInsetsZero`.
+@property (nonatomic, assign) NSDirectionalEdgeInsets additionalFloatingLayoutMargins;
+
 /// Enables or disables inheriting bottom docking view metrics for the popup bar, including minimization into tab bars.
 ///
 /// When enabled, floating popup bars will inherit certain metrics from their bottom docking views, such as toolbars and tab bars. This also enables popup bar minimization into tab bars.
